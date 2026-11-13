@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TV Highlights Overlay</title>
+<style>
+  /* ==========================================================
+     Design tokens and base styling
+     These variables control the TV-style branding and colors.
+  ========================================================== */
+  :root {
+    --accent: #d71920;
+    --gold: #ffc20e;
+    --primary: #0b2a5b;
+    --tick-bg: #f3f5f9;
+    --tick-text: #0b1a33;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  }
+
+  /* The full layout is built on a fixed 1920x1080 stage and then scaled to fit the current source size. */
+  #stage {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    transform-origin: top left;
+  }
+
+  /* ==========================================================
+     Global overlay elements
+     These rules control the top-left LIVE tag, top-right logo,
+     and the animated lower-third bar used for headlines and ticker.
+  ========================================================== */
+
+  /* ---------- Top-left LIVE bug ---------- */
+  .live {
+    position: absolute;
+    top: 54px;
+    left: 96px;
+    display: flex;
+    height: 52px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.35);
+    transition: opacity .6s, transform .6s;
+  }
+  .live.off { opacity: 0; transform: translateX(-30px); }
+  .live-badge {
+    background: var(--accent);
+    color: #fff;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 900;
+    font-size: 24px;
+    letter-spacing: 3px;
+  }
+  .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .live-title {
+    background: rgba(8,20,44,.82);
+    color: #fff;
+    padding: 0 22px;
+    display: flex;
+    align-items: center;
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  .live-title:empty { display: none; }
+
+  /* ---------- Top-right logo ---------- */
+  .logo {
+    position: absolute;
+    top: 54px;
+    right: 96px;
+    height: 76px;
+    min-width: 190px;
+    padding: 0 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(8,20,44,.8);
+    border-left: 6px solid var(--accent);
+    color: #fff;
+    font-weight: 900;
+    font-size: 34px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    box-shadow: 0 6px 18px rgba(0,0,0,.35);
+    transition: opacity .6s, transform .6s;
+  }
+  .logo img { max-height: 60px; max-width: 300px; display: block; }
+  .logo.off { opacity: 0; transform: translateX(30px); }
+
+  /* ---------- Lower third ---------- */
+  .lower {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    bottom: 54px;
+    transition: transform .9s cubic-bezier(.2,.8,.2,1), opacity .9s;
+  }
+  .lower.hidden { transform: translateY(230px); opacity: 0; }
+
+  .row1 {
+    display: flex;
+    height: 128px;
+    filter: drop-shadow(0 10px 22px rgba(0,0,0,.45));
+  }
+
+  .tag {
+    position: relative;
+    flex: none;
+    width: 300px;
+    overflow: hidden;
+    background: linear-gradient(180deg, var(--accent), #a30f15);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    font-weight: 900;
+    font-size: 34px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    clip-path: polygon(0 0, 100% 0, calc(100% - 30px) 100%, 0 100%);
+    padding-right: 22px;
+  }
+  .tag::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 90px;
+    left: -140px;
+    background: linear-gradient(100deg, transparent, rgba(255,255,255,.35), transparent);
+    transform: skewX(-20deg);
+    animation: shine 6s ease-in-out infinite 1.5s;
+  }
+
+  .headline {
+    position: relative;
+    flex: 1;
+    margin-left: -26px;
+    padding: 0 36px 0 56px;
+    overflow: hidden;
+    background: linear-gradient(90deg, #08142c 0%, var(--primary) 100%);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+  }
+  .kicker {
+    align-self: flex-start;
+    background: var(--gold);
+    color: #101828;
+    padding: 2px 14px;
+    font-weight: 900;
+    font-size: 20px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  .kicker:empty { display: none; }
+  .htext {
+    font-weight: 800;
+    font-size: 46px;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .htext.upper { text-transform: uppercase; }
+  .in  { animation: headIn .6s cubic-bezier(.2,.8,.2,1) both; }
+  .out { animation: headOut .35s ease-in both; }
+  .progress {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 5px;
+    width: 0;
+    background: var(--gold);
+  }
+
+  .row2 {
+    display: flex;
+    height: 62px;
+    margin-top: 6px;
+    filter: drop-shadow(0 8px 16px rgba(0,0,0,.35));
+  }
+  .tick-label {
+    flex: none;
+    width: 220px;
+    background: var(--primary);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 22px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+  }
+  .tick-window {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    background: var(--tick-bg);
+  }
+  .tick-track {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+    color: var(--tick-text);
+    font-size: 28px;
+    font-weight: 700;
+    animation: scroll linear infinite;
+  }
+  .tick-item {
+    display: flex;
+    align-items: center;
+    padding: 0 26px;
+  }
+  .tick-tag {
+    background: var(--accent);
+    color: #fff;
+    font-size: 17px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    padding: 3px 11px;
+    margin-right: 14px;
+    text-transform: uppercase;
+  }
+  .tick-sep { color: var(--accent); font-size: 20px; }
+  .clock {
+    flex: none;
+    width: 240px;
+    background: #08142c;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.05;
+  }
+  .clock .time { font-size: 30px; font-weight: 800; letter-spacing: 1px; }
+  .clock .date { font-size: 14px; letter-spacing: 2px; opacity: .75; margin-top: 2px; }
+
+  @keyframes pulse   { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.75); } }
+  @keyframes shine   { 0%,70% { left: -140px; } 100% { left: 360px; } }
+  @keyframes headIn  { from { transform: translateY(28px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes headOut { from { transform: none; opacity: 1; } to { transform: translateY(-22px); opacity: 0; } }
+  @keyframes progress { from { width: 0; } to { width: 100%; } }
+  @keyframes scroll  { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+</style>
+</head>
+<body>
+  <!-- The full overlay is mounted inside a fixed-size stage and scaled to fit the video canvas. -->
+  <div id="stage">
+
+    <!-- Top-left LIVE indicator -->
+    <div class="live off" id="live">
+      <div class="live-badge"><span class="dot"></span><span id="liveText">LIVE</span></div>
+      <div class="live-title" id="programTitle"></div>
+    </div>
+
+    <!-- Top-right channel branding -->
+    <div class="logo off" id="logo"></div>
+
+    <!-- Main lower-third with headline and ticker -->
+    <div class="lower hidden" id="lower">
+      <div class="row1">
+        <div class="tag" id="tag"></div>
+        <div class="headline">
+          <div class="kicker" id="kicker"></div>
+          <div class="htext" id="htext"></div>
+          <div class="progress" id="progress"></div>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="tick-label" id="tickLabel"></div>
+        <div class="tick-window"><div class="tick-track" id="track"></div></div>
+        <div class="clock"><div class="time" id="time"></div><div class="date" id="date"></div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+  (function () {
+    // ==========================================================
+    // Overlay state and helper references
+    // This keeps track of the active headline, ticker and clock state.
+    // ==========================================================
+    var $ = function (id) { return document.getElementById(id); };
+    var state = {
+      idx: 0,
+      timer: null,
+      headSig: '',
+      tickSig: '',
+      logoSig: '',
+      heads: [],
+      secs: 8,
+      tz: undefined,
+      offset: 3,
+      first: true
+    };
+
+    /* ----------------------------------------------------------
+       Resize the fixed 1920x1080 scene to match the browser/OBS source.
+       This keeps the overlay proportional on any display size.
+    ---------------------------------------------------------- */
+    function fit() {
+      var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      $('stage').style.transform = 'scale(' + s + ')';
+    }
+    window.addEventListener('resize', fit); fit();
+
+    /* ----------------------------------------------------------
+       Headline animation logic.
+       The headline rotates automatically and the progress bar tracks the timer.
+    ---------------------------------------------------------- */
+    var kickerEl = $('kicker'), textEl = $('htext'), progEl = $('progress');
+
+    function retrigger(el, cls) {
+      el.classList.remove('in', 'out');
+      void el.offsetWidth;
+      if (cls) el.classList.add(cls);
+    }
+
+    function fitText() {
+      var size = 46;
+      textEl.style.fontSize = size + 'px';
+      while (textEl.scrollWidth > textEl.clientWidth && size > 28) {
+        size -= 2;
+        textEl.style.fontSize = size + 'px';
+      }
+    }
+
+    function setHeadline(h) {
+      kickerEl.textContent = h.kicker || '';
+      textEl.textContent = h.text || '';
+      fitText();
+      retrigger(kickerEl, 'in');
+      retrigger(textEl, 'in');
+      progEl.style.animation = 'none';
+      void progEl.offsetWidth;
+      progEl.style.animation = 'progress ' + state.secs + 's linear forwards';
+    }
+
+    function cycle() {
+      if (!state.heads.length) return;
+
+      var h = state.heads[state.idx % state.heads.length];
+      state.idx++;
+
+      if (state.first) {
+        state.first = false;
+        setHeadline(h);
+      } else {
+        retrigger(kickerEl, 'out');
+        retrigger(textEl, 'out');
+        setTimeout(function () { setHeadline(h); }, 350);
+      }
+
+      clearTimeout(state.timer);
+      state.timer = setTimeout(cycle, state.secs * 1000);
+    }
+
+    /* ----------------------------------------------------------
+       Ticker construction.
+       The track is duplicated so the marquee scrolls smoothly in a loop.
+    ---------------------------------------------------------- */
+    function buildTicker(items, speed) {
+      var track = $('track');
+      track.innerHTML = '';
+
+      if (!items.length) return;
+
+      for (var copy = 0; copy < 2; copy++) {
+        items.forEach(function (it) {
+          var o = (typeof it === 'string') ? { text: it } : it;
+          var el = document.createElement('span');
+          el.className = 'tick-item';
+
+          if (o.tag) {
+            var t = document.createElement('span');
+            t.className = 'tick-tag';
+            t.textContent = o.tag;
+            el.appendChild(t);
+          }
+
+          var tx = document.createElement('span');
+          tx.textContent = o.text || '';
+          el.appendChild(tx);
+          track.appendChild(el);
+
+          var sep = document.createElement('span');
+          sep.className = 'tick-sep';
+          sep.textContent = '\u25C6';
+          track.appendChild(sep);
+        });
+      }
+
+      var half = track.scrollWidth / 2;
+      track.style.animationDuration = Math.max(10, half / (speed || 110)) + 's';
+    }
+
+    /* ----------------------------------------------------------
+       Apply config values from config.js.
+       It updates colors, branding, ticker, headlines and visibility.
+    ---------------------------------------------------------- */
+    function apply(C) {
+      C = C || {};
+      var root = document.documentElement.style, col = C.colors || {};
+
+      if (col.accent) root.setProperty('--accent', col.accent);
+      if (col.highlight) root.setProperty('--gold', col.highlight);
+      if (col.primary) root.setProperty('--primary', col.primary);
+      if (col.tickerBg) root.setProperty('--tick-bg', col.tickerBg);
+      if (col.tickerText) root.setProperty('--tick-text', col.tickerText);
+
+      state.offset = (typeof C.utcOffset === 'number') ? C.utcOffset : 3;
+      $('tag').textContent = C.tag || 'HIGHLIGHTS';
+      $('tickLabel').textContent = C.tickerLabel || 'LATEST';
+      textEl.classList.toggle('upper', C.uppercase !== false);
+
+      // Update or rebuild the logo when the config changes.
+      var logoSig = (C.logoImage || '') + '|' + (C.channelName || '');
+      if (logoSig !== state.logoSig) {
+        state.logoSig = logoSig;
+        var logo = $('logo');
+        logo.innerHTML = '';
+
+        if (C.logoImage) {
+          var img = document.createElement('img');
+          img.src = C.logoImage;
+          logo.style.background = 'transparent';
+          logo.style.borderLeft = 'none';
+          logo.style.boxShadow = 'none';
+          logo.appendChild(img);
+        } else {
+          logo.style.background = '';
+          logo.style.borderLeft = '';
+          logo.style.boxShadow = '';
+          logo.textContent = C.channelName || 'YOUR TV';
+        }
+      }
+
+      // Update the top-left LIVE bug and its title.
+      $('liveText').textContent = C.liveText || 'LIVE';
+      $('programTitle').textContent = C.programTitle || '';
+
+      // The whole lower third can be toggled on/off with animations.
+      var show = C.visible !== false;
+      $('lower').classList.toggle('hidden', !show);
+      $('logo').classList.toggle('off', !show);
+      $('live').classList.toggle('off', !show || C.liveBug === false);
+
+      // Only reset the headline cycle when the actual headline content changes.
+      state.secs = C.headlineSeconds || 8;
+      var headSig = JSON.stringify([C.headlines, C.headlineSeconds]);
+      if (headSig !== state.headSig) {
+        state.headSig = headSig;
+        state.heads = C.headlines || [];
+        state.idx = 0;
+        state.first = true;
+        clearTimeout(state.timer);
+        cycle();
+      }
+
+      // Only rebuild the ticker when its data or speed changes.
+      var tickSig = JSON.stringify([C.ticker, C.tickerSpeed]);
+      if (tickSig !== state.tickSig) {
+        state.tickSig = tickSig;
+        buildTicker(C.ticker || [], C.tickerSpeed);
+      }
+    }
+
+    /* ----------------------------------------------------------
+       Reload config.js automatically every few seconds so local edits
+       are picked up without refreshing the browser.
+    ---------------------------------------------------------- */
+    function load() {
+      var s = document.createElement('script');
+      s.src = 'config.js?t=' + Date.now();
+      s.onload = function () {
+        var c = window.CONFIG;
+        s.remove();
+        apply(c);
+      };
+      s.onerror = function () { s.remove(); };
+      document.head.appendChild(s);
+    }
+    load();
+    setInterval(load, 3000);
+
+    /* ----------------------------------------------------------
+       Clock display using a UTC offset value from config.js.
+    ---------------------------------------------------------- */
+    var DAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+    var MONS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+
+    function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+    function tick() {
+      var d = new Date(Date.now() + state.offset * 3600000);
+      $('time').textContent = pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
+      $('date').textContent = DAYS[d.getUTCDay()] + ', ' + d.getUTCDate() + ' ' + MONS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+    }
+
+    tick();
+    setInterval(tick, 1000);
+  })();
+  </script>
+</body>
+</html>
